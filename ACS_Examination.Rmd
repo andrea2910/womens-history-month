@@ -1,0 +1,261 @@
+---
+title: "ACS Census Data"
+output:
+  html_document:
+    df_print: paged
+---
+
+Code to examine the ACS Census data, which contains statistics about gender and pay as well. This will be based on the tidycensus package (https://github.com/GL-Li/totalcensus)
+
+## Set Up Our Code
+
+We need to load in the correct packages, and set up an API key and a path where we want our data to be loaded to. The Census API offers an easy way to download data. You need to get a key from this website, http://api.census.gov/data/key_signup.html. Once you have a key, you can replace the text and use replace "YOUR API KEY GOES HERE"
+
+```{r setup, echo=FALSE, message=FALSE}
+# install.packages(c("tidycensus","tidyverse", "totalcensus","ggplot2"))
+# install.packages(c("maptools","tigris", "leaflet","ggmap","totalcensus"))
+library(tidycensus)
+library(tidyverse)
+library(totalcensus)
+library(ggplot2)
+library(ggmap)
+library(maptools)
+library(tigris) # for function readOGR to get geo ID and polygon squares
+library(leaflet)
+#census_api_key("YOUR API KEY GOES HERE")
+#census_api_key("71b73631ae7447defddb4c42e85a20e970e2c7bb", install=TRUE)
+census_api_key("71b73631ae7447defddb4c42e85a20e970e2c7bb")
+```
+
+We want to examine the different options associated with the ACS data. Feel free to filter the different datasets below to generate different data.
+
+```{r info, echo=TRUE}
+vars <- search_tablecontents("acs", view=FALSE) #figure out which variables you want
+summary_levs <- search_summarylevels("acs", view=FALSE) # figure out which summary levels we have access to
+geos <- search_geocomponents("acs", view=FALSE)
+geos2 <- search_geoheaders("acs", view=FALSE)
+```
+
+### DMV Map
+
+We want to create the first base map of the DMV, or DC-Maryland-Virginia area. We'll use county level data.  
+
+```{r mapdat, echo=TRUE, results='hide'}
+#from the tigris package we can get each individual county from state
+states <- c("DC","VA","MD")
+dmv <- rbind_tigris(
+  lapply(
+    states, function(x) counties(state = x,cb =TRUE)
+  )
+)
+
+```
+
+```{r dmv-map, echo=FALSE}
+plot(dmv) 
+```
+
+
+
+
+### Visualize the Gender Ratio in the DMV.
+
+We want to visualize the gender ration in each area. We'll create a function 'load_data_fm' to get ACS 5 year county estimates for males and females, for each state.  
+
+```{r male-female-ratios, echo=TRUE}
+load_data_fm <- function(state){
+  return(get_acs("county", variables=c(male="B01001_002",female="B01001_026"), state=state, survey="acs5"))
+}
+
+dc_fm <- load_data_fm("DC")
+md_fm <- load_data_fm("MD")
+va_fm <- load_data_fm("VA")
+
+dmv_fm <- rbind(dc_fm, md_fm, va_fm) #combine each state together
+dmv_fm <- dmv_fm[,-5]
+
+dmv_fm2 <- dmv_fm %>% spread(variable, estimate) #transpose the male and female variables
+dmv_fm2$pfemale <- round(dmv_fm2$female / (dmv_fm2$female + dmv_fm2$male) * 100 , 0) #calculate the female percentage
+
+print(head(dmv_fm2))
+
+
+```
+
+Now we can map the percentage female in each county. 
+
+```{r percent-female, echo=TRUE}
+dmv2 <- geo_join(dmv, dmv_fm2, "GEOID", "GEOID", how="inner") #158 rows
+
+pal <- colorQuantile("Blues", NULL, n = 3)
+
+map1 <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = dmv2, 
+              fillColor = ~pal(dmv2$pfemale), 
+              fillOpacity = 0.7, 
+              weight = 0.2, 
+              smoothFactor = 0.2, 
+              popup = paste("Percent Female: ", dmv2$pfemale, "%", sep="" )) %>%
+  addLegend(pal = pal, 
+            values = dmv2$pfemale, 
+            position = "bottomright", 
+            title = "Percent Female")
+
+map1
+```
+
+### Gender Inequality Statistics
+
+We want to filter for the counts of individuals in each category. The table_contents variable is how we do that. m1_2499 translates to Male $1-$2,499 income level count. 
+
+```{r loadpaydata, echo=TRUE}
+
+load_data_pay <- function(state){
+  return(get_acs("county", variables=c(m1_2499 = "B20001_003", m2500_4999 = "B20001_004",
+                                       m5000_7499 ="B20001_005",
+                       m7500_9999 = "B20001_006",m10000_12499 = "B20001_007",
+                       m12500_14999 = "B20001_008",m15000_17499 =  "B20001_009",
+                       m17500_19999 = "B20001_010",
+                       m20000_22499 = "B20001_011",
+                       m22500_24999 = "B20001_012",
+                      m25000_29999 = "B20001_013",
+                      m30000_34999 = "B20001_014",
+                       m35000_39999 = "B20001_015",
+                       m40000_44999 = "B20001_016",
+                       m45000_49999 = "B20001_017",
+                       m50000_54999 = "B20001_018",
+                       m55000_64999 = "B20001_019",
+                       m65000_74999 = "B20001_020",
+                       m75000_99999 = "B20001_021",
+                       m100000_ ="B20001_022",
+                       f1_2499 =  "B20001_024",
+                       f2500_4999 = "B20001_025",
+                       f5000_7499 = "B20001_026",
+                       f7500_9999 = "B20001_027",
+                       f10000_12499 = "B20001_028",
+                       f12500_14999 = "B20001_029",
+                       f15000_17499 = "B20001_030",
+                       f17500_19999 = "B20001_031",
+                       f20000_22499 = "B20001_032",
+                       f22500_24999 = "B20001_033",
+                       f25000_29999 =  "B20001_034",
+                       f30000_34999 = "B20001_035",
+                       f35000_39999 = "B20001_036",
+                       f40000_44999 = "B20001_037",
+                       f45000_49999 = "B20001_038",
+                       f50000_54999 = "B20001_039",
+                       f55000_64999 = "B20001_040",
+                       f65000_74999 = "B20001_041",
+                      f75000_99999 = "B20001_042",
+                      f100000_ = "B20001_043"), state=state, survey="acs5"))
+}
+
+dc_pay <- load_data_pay("DC")
+md_pay <- load_data_pay("MD")
+va_pay <- load_data_pay("VA")
+
+dmv_pay <- rbind(dc_pay, md_pay, va_pay)
+dmv_pay <- dmv_pay[,-5]
+dmv_pay2 <- dmv_pay %>% spread(variable, estimate) #transpose the male and female variables
+
+print(head(dmv_pay2))
+
+
+```
+
+### Clean data now
+
+We want to clean the above data and calculate the total sum of all female income, total sum of all male income, and then the difference between averages. 
+
+```{r cleaning, echo=TRUE}
+
+names <- names(dmv_pay2)[3:length(names(dmv_pay2))]
+maths <- ifelse(names %in% c("f100000_","m100000_"), 200000 , gsub("f","", gsub("m", "", gsub("_", "+", names))))
+maths2 <- sapply(maths, FUN=function(x) (eval(parse(text=x))+1)/2) # we will apply the average of each group to each column
+
+malesum = rep(0, nrow(dmv_pay2))
+femalesum = rep(0, nrow(dmv_pay2))
+for(i in 1:length(names)){
+  if(substr(names[i],1,1)=="f"){
+    femalesum <- femalesum + dmv_pay2[[names[i]]]*as.numeric(maths2[i])
+  }
+  else {
+    malesum <- malesum + dmv_pay2[[names[i]]]*as.numeric(maths2[i])
+  }
+}
+
+dmv_pay2$malesum <- malesum
+dmv_pay2$femalesum <- femalesum
+
+## merge dmv_fm2 to get female and male totals
+dmv_pay3 <- inner_join(dmv_pay2, dmv_fm2) #should be the same number of rows
+if(nrow(dmv_pay3)!= nrow(dmv_pay2)) print("ERROR CHECK OUT")
+
+dmv_pay3$femaleavg <- round(dmv_pay3$femalesum/dmv_pay3$female,2)
+dmv_pay3$maleavg <- round(dmv_pay3$malesum/dmv_pay3$male,2)
+
+dmv_pay3$dif <- dmv_pay3$femaleavg - dmv_pay3$maleavg #difference between female and male
+#positive is better
+
+print(dmv_pay3[, c(1:2, 44:length(names(dmv_pay3)))])
+```
+
+### Comparing the Pay Gap by Count
+
+Now we will map our country differences. 
+
+```{r mapavg, echo=TRUE}
+dmv_pay4 <- geo_join(dmv, dmv_pay3, "GEOID", "GEOID", how="inner") #158 rows
+if(nrow(dmv_pay4@data) != nrow(dmv_pay3)) print("ERROR CHECK OUT")
+
+pal2 <- colorBin("Blues", domain=c(min(dmv_pay3$dif), max(dmv_pay3$dif)), bins = 8)
+
+map2 <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = dmv_pay4, 
+              fillColor = ~pal2(dmv_pay4$dif), 
+              fillOpacity = 0.7, 
+              weight = 0.2, 
+              smoothFactor = 0.2, 
+              popup = paste("Difference:", format(dmv_pay4$dif, big.mark=","),sep=" ")) %>%
+  addLegend(pal = pal2, 
+            values = dmv_pay4$dif, 
+            position = "bottomright", 
+            title = "Income Difference Men - Women",
+            labFormat = labelFormat(prefix="$")) #%>% labFormat("bin")
+
+map2
+```
+
+### Examine the Average Amount of Differences
+
+```{r avgs, echo=TRUE}
+library(scales)
+differences <- dmv_pay3[,c(1:2, 48:50)]
+differences2 <- differences[,-5] %>% gather(gender, amount, femaleavg:maleavg, factor_key=TRUE)
+
+diffavg <- differences2 %>% group_by(gender) %>% summarize(mean.inc = mean(amount))
+
+ggplot(data=differences2, aes(x=amount, fill=gender,color=gender)) + geom_histogram(aes(y=..density..),alpha=.5) +
+  geom_density(alpha=.2) + geom_vline(data=diffavg, aes(xintercept=mean.inc,  colour=gender),
+               linetype="dashed", size=1) + ggtitle("Female and Male Average Comparisons") +
+  ylab("Density") + xlab("Average Income by County") + theme_bw() + 
+  scale_y_continuous(labels = scales::percent) + scale_x_continuous(labels = scales::comma)
+```
+
+```{r examine, echo=TRUE}
+
+fem.higher = length(which(dmv_pay3$dif>0))
+total = length(dmv_pay3$dif)
+
+print(paste("There are only", fem.higher, "counties, out of", total, "where females make more than men"))
+
+print(dmv_pay3[dmv_pay3$dif>0,c(2, 43:50)])
+
+```
+
+
+## Citations
+D. Kahle and H. Wickham. ggmap: Spatial Visualization with ggplot2. The R Journal, 5(1),
+  144-161. URL http://journal.r-project.org/archive/2013-1/kahle-wickham.pdf
