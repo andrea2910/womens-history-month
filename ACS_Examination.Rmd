@@ -23,8 +23,6 @@ library(maptools)
 library(tigris) # for function readOGR to get geo ID and polygon squares
 library(leaflet)
 #census_api_key("YOUR API KEY GOES HERE")
-#census_api_key("71b73631ae7447defddb4c42e85a20e970e2c7bb", install=TRUE)
-census_api_key("71b73631ae7447defddb4c42e85a20e970e2c7bb")
 ```
 
 We want to examine the different options associated with the ACS data. Feel free to filter the different datasets below to generate different data.
